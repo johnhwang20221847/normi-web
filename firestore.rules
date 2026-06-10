@@ -1,0 +1,58 @@
+// ============================================================
+//  firestore.rules
+//  Firebase Console → Firestore → 규칙 탭에 붙여넣기
+// ============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── 사용자 프로필 ──────────────────────────────────────
+    // 본인만 수정, 로그인 사용자 모두 조회 가능
+    match /users/{uid} {
+      allow read:   if request.auth != null;
+      allow create: if request.auth != null && request.auth.uid == uid;
+      allow update: if request.auth != null && request.auth.uid == uid;
+      allow delete: if false;   // 계정 삭제는 서버 함수로 처리
+    }
+
+    // ── 커뮤니티 게시글 ────────────────────────────────────
+    match /posts/{postId} {
+      // 로그인한 사용자 모두 조회
+      allow read: if request.auth != null;
+
+      // 본인이 작성한 글만 생성 가능
+      allow create: if request.auth != null
+                    && request.resource.data.authorUID == request.auth.uid
+                    && request.resource.data.content.size() > 0
+                    && request.resource.data.content.size() <= 500;
+
+      // 수정: 본인 글 OR 좋아요 필드(likes, likedBy)만 타인이 업데이트 가능
+      allow update: if request.auth != null
+                    && (
+                      // 본인 글 전체 수정
+                      resource.data.authorUID == request.auth.uid
+                      ||
+                      // 좋아요 필드만 변경 허용
+                      (request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['likes', 'likedBy', 'commentCount']))
+                    );
+
+      // 본인 글만 삭제
+      allow delete: if request.auth != null
+                    && resource.data.authorUID == request.auth.uid;
+
+      // ── 댓글 서브컬렉션 ──────────────────────────────────
+      match /comments/{commentId} {
+        allow read:   if request.auth != null;
+        allow create: if request.auth != null
+                      && request.resource.data.authorUID == request.auth.uid
+                      && request.resource.data.content.size() > 0
+                      && request.resource.data.content.size() <= 200;
+        allow delete: if request.auth != null
+                      && resource.data.authorUID == request.auth.uid;
+        allow update: if false;
+      }
+    }
+  }
+}
